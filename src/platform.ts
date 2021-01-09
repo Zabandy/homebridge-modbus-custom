@@ -1,120 +1,131 @@
-import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, Service, Characteristic } from 'homebridge';
+import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, Service, Characteristic } from 'homebridge';
 
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
-import { ExamplePlatformAccessory } from './platformAccessory';
+import { AcessoryFactory, ModbusAccessory } from './accessory';
+import { ModbusPlatformConfig } from './config';
+import { Modbus } from './modbus';
 
-/**
- * HomebridgePlatform
- * This class is the main constructor for your plugin, this is where you should
- * parse the user config and discover/register accessories with Homebridge.
- */
-export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
+
+export class ModbusCustomPlugin implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
   public readonly Characteristic: typeof Characteristic = this.api.hap.Characteristic;
+  public readonly modbus: Modbus;
 
-  // this is used to track restored cached accessories
-  public readonly accessories: PlatformAccessory[] = [];
+  private readonly accessories: Map<string, PlatformAccessory> = new Map<string, PlatformAccessory>();
+  private readonly accessoriesCache: Map<string, PlatformAccessory> = new Map<string, PlatformAccessory>();
+  private readonly handlers: ModbusAccessory[] = [];
+  
+  private readonly scriptMap: Map<string, AcessoryFactory> = new Map<string, AcessoryFactory>();
 
   constructor(
     public readonly log: Logger,
-    public readonly config: PlatformConfig,
+    public readonly config: ModbusPlatformConfig,
     public readonly api: API,
-  ) {
-    this.log.debug('Finished initializing platform:', this.config.name);
+  ) {    
+    this.log.debug('Initializing platform: ', this.config.name);
 
-    // When this event is fired it means Homebridge has restored all cached accessories from disk.
-    // Dynamic Platform plugins should only register new accessories after this event was fired,
-    // in order to ensure they weren't added to homebridge already. This event can also be used
-    // to start discovery of new accessories.
+    this.modbus = new Modbus({ 'port': this.config.port || 502, 'host':this.config.host }, 
+      this.log, 
+      this.config.unit || 1,
+      this.config.poll || 1000);
+
     this.api.on('didFinishLaunching', () => {
-      log.debug('Executed didFinishLaunching callback');
-      // run the method to discover / register your devices as accessories
-      this.discoverDevices();
+      this.modbus.connect();
+      this.loadScripts();
     });
   }
+  
 
-  /**
-   * This function is invoked when homebridge restores cached accessories from disk at startup.
-   * It should be used to setup event handlers for characteristics and update respective values.
-   */
   configureAccessory(accessory: PlatformAccessory) {
     this.log.info('Loading accessory from cache:', accessory.displayName);
-
-    // add the restored accessory to the accessories cache so we can track if it has already been registered
-    this.accessories.push(accessory);
+    this.accessoriesCache.set(accessory.UUID, accessory);
   }
 
-  /**
-   * This is an example method showing how to register discovered accessories.
-   * Accessories must only be registered once, previously created accessories
-   * must not be registered again to prevent "duplicate UUID" errors.
-   */
-  discoverDevices() {
+  loadScripts() {
+    if (!this.config.scripts) {
+      this.log.info('No scripts defined in config.json');
+      return;
+    }
 
-    // EXAMPLE ONLY
-    // A real plugin you would discover accessories from the local network, cloud services
-    // or a user-defined array in the platform config.
-    const exampleDevices = [
-      {
-        exampleUniqueId: 'ABCD',
-        exampleDisplayName: 'Bedroom',
-      },
-      {
-        exampleUniqueId: 'EFGH',
-        exampleDisplayName: 'Kitchen',
-      },
-    ];
-
-    // loop over the discovered devices and register each one if it has not already been registered
-    for (const device of exampleDevices) {
-
-      // generate a unique id for the accessory this should be generated from
-      // something globally unique, but constant, for example, the device serial
-      // number or MAC address
-      const uuid = this.api.hap.uuid.generate(device.exampleUniqueId);
-
-      // see if an accessory with the same uuid has already been registered and restored from
-      // the cached devices we stored in the `configureAccessory` method above
-      const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
-
-      if (existingAccessory) {
-        // the accessory already exists
-        if (device) {
-          this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
-
-          // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. eg.:
-          // existingAccessory.context.device = device;
-          // this.api.updatePlatformAccessories([existingAccessory]);
-
-          // create the accessory handler for the restored accessory
-          // this is imported from `platformAccessory.ts`
-          new ExamplePlatformAccessory(this, existingAccessory);
-          
-          // update accessory cache with any changes to the accessory details and information
-          this.api.updatePlatformAccessories([existingAccessory]);
-        } else if (!device) {
-          // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, eg.:
-          // remove platform accessories when no longer present
-          this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
-          this.log.info('Removing existing accessory from cache:', existingAccessory.displayName);
+    (async (list : Record<string, string>) => {
+      for(const key in list) {
+        const module = await import(list[key]);
+        this.scriptMap.set(key, module.factory);
+        
+        if (!module.factory) {
+          this.log.warn('Script "' + key + '" has no factory method. Skipped.');
+          continue;
         }
-      } else {
-        // the accessory does not yet exist, so we need to create it
-        this.log.info('Adding new accessory:', device.exampleDisplayName);
 
-        // create a new accessory
-        const accessory = new this.api.platformAccessory(device.exampleDisplayName, uuid);
+        this.log.info('Script "' + key + '" loaded');
+      }
 
-        // store a copy of the device object in the `accessory.context`
-        // the `context` property can be used to store any data about the accessory you may need
-        accessory.context.device = device;
+      this.discoverDevices();
+    })(this.config.scripts);
+  }
 
-        // create the accessory handler for the newly create accessory
-        // this is imported from `platformAccessory.ts`
-        new ExamplePlatformAccessory(this, accessory);
+  discoverDevices() {
+    if (!this.config.accessories) {
+      this.log.info('No accessories defined in config.json');
+      return;
+    }
+    
+    const newAccessories:PlatformAccessory[] = [];
 
-        // link the accessory to your platform
-        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+    // Discover devices
+    this.log.info('Loading accessories from config.json');
+    this.config.accessories.forEach(element => {
+      if (!this.scriptMap.has(element.script)) {
+        this.log.warn('Unknown script "' + element.script + '" specified for device "' + element.name + '". Skipped.');
+        return;
+      }
+
+      const uuid = this.api.hap.uuid.generate(element.id ? element.id : element.name);
+      
+      // Restore from cache or register new one
+      let platformAccessory: PlatformAccessory | undefined;
+      if (this.accessoriesCache.has(uuid)) {
+        this.log.info('Restoring existing accessory from cache:', element.name);
+        platformAccessory = this.accessoriesCache.get(uuid);
+        this.accessoriesCache.delete(uuid);
+      } 
+
+      if (!platformAccessory) {
+        this.log.info('Creating new accessory:', element.name);
+        platformAccessory = new this.api.platformAccessory(element.name, uuid);
+        newAccessories.push(platformAccessory);
+      }
+      this.accessories.set(uuid, platformAccessory);
+
+      // create handler
+      const factory = this.scriptMap.get(element.script);
+      if (!factory) {
+        return;
+      }
+      const accessory: ModbusAccessory = factory({
+        platform : this,
+        accessory : platformAccessory,
+        config: element,
+      });
+
+      this.handlers.push(accessory);
+      
+      this.log.info('Accessory "' + element.name + '" loaded');
+    });
+
+    this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, newAccessories);
+    // initialize handlers
+    this.handlers.forEach(handler => handler.init());
+
+    this.log.info('Checking for unused accessories.');
+    // unregister devices from left in cache
+    for(const key in this.accessoriesCache.keys) {
+      
+      this.log.info('Unused accessory uuid:' + key);
+      const accessory:PlatformAccessory | undefined = this.accessoriesCache.get(key);
+      if (accessory) {
+        this.log.info('Removing unused accessory:' + accessory.displayName);
+        this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
       }
     }
   }
