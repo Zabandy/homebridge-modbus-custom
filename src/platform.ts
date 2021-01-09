@@ -12,7 +12,7 @@ export class ModbusCustomPlugin implements DynamicPlatformPlugin {
   public readonly modbus: Modbus;
 
   private readonly accessories: Map<string, PlatformAccessory> = new Map<string, PlatformAccessory>();
-  private readonly accessoriesCache: Map<string, PlatformAccessory> = new Map<string, PlatformAccessory>();
+  private readonly cache: PlatformAccessory[] = [];
   private readonly handlers: ModbusAccessory[] = [];
   
   private readonly scriptMap: Map<string, AcessoryFactory> = new Map<string, AcessoryFactory>();
@@ -35,10 +35,9 @@ export class ModbusCustomPlugin implements DynamicPlatformPlugin {
     });
   }
   
-
   configureAccessory(accessory: PlatformAccessory) {
     this.log.info('Loading accessory from cache:', accessory.displayName);
-    this.accessoriesCache.set(accessory.UUID, accessory);
+    this.cache.push(accessory);
   }
 
   loadScripts() {
@@ -83,11 +82,9 @@ export class ModbusCustomPlugin implements DynamicPlatformPlugin {
       const uuid = this.api.hap.uuid.generate(element.id ? element.id : element.name);
       
       // Restore from cache or register new one
-      let platformAccessory: PlatformAccessory | undefined;
-      if (this.accessoriesCache.has(uuid)) {
+      let platformAccessory: PlatformAccessory | undefined = this.cache.find(accessory => accessory.UUID === uuid);
+      if (platformAccessory) {
         this.log.info('Restoring existing accessory from cache:', element.name);
-        platformAccessory = this.accessoriesCache.get(uuid);
-        this.accessoriesCache.delete(uuid);
       } 
 
       if (!platformAccessory) {
@@ -118,15 +115,12 @@ export class ModbusCustomPlugin implements DynamicPlatformPlugin {
     this.handlers.forEach(handler => handler.init());
 
     this.log.info('Checking for unused accessories.');
-    // unregister devices from left in cache
-    for(const key in this.accessoriesCache.keys) {
-      
-      this.log.info('Unused accessory uuid:' + key);
-      const accessory:PlatformAccessory | undefined = this.accessoriesCache.get(key);
-      if (accessory) {
-        this.log.info('Removing unused accessory:' + accessory.displayName);
-        this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+    this.cache.forEach(element => {
+      // unregister devices from left in cache
+      if (!this.accessories.has(element.UUID)) {
+        this.log.info('Removing unused accessory:' + element.displayName);
+        this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [element]);
       }
-    }
+    });
   }
 }
