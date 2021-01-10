@@ -6,9 +6,9 @@
 </p>
 
 
-# Homebridge Platform Plugin Template
+# Homebridge Modbus Custom Plugin
 
-This is a Homebridge platform plugin to control PLC devices over Modbus TCP with custom scripts.
+This is a Homebridge platform plugin to control devices over Modbus TCP with custom scripts.
 
 # WIP WIP WIP
 
