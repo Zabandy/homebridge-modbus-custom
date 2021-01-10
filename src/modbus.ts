@@ -2,7 +2,6 @@ import { EventEmitter } from 'events';
 import { ModbusTCPClient } from 'jsmodbus';
 import { Socket, TcpSocketConnectOpts } from 'net';
 import { Logger } from 'homebridge';
-import { exec } from 'child_process';
 
 class SegmentInfo {
   public min = 9999;
@@ -83,7 +82,7 @@ export class Modbus extends EventEmitter {
     } else {
       final = value; 
     }
-    // set should have higher priority than read. That is why insert commands at the beginning of order
+    // set operation should have higher priority than read. That's why insert commands at the beginning of queue
     this.commands.unshift(new Command('w', type as RegisterType, index, 0, final));
     this.fire();
 

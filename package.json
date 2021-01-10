@@ -1,9 +1,9 @@
 {
   "private": true,
-  "displayName": "Modbus Custom",
+  "displayName": "Homebridge Modbus Custom",
   "name": "homebridge-modbus-custom",
   "version": "1.0.0",
-  "description": "Homebridge PlugIn to control PLC devices over Modbus TCP",
+  "description": "Homebridge PlugIn to control PLC devices over Modbus TCP with custom scripts",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
