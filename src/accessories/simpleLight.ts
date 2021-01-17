@@ -48,8 +48,6 @@ export class SimpleModbusLight extends ModbusAccessory {
           .updateValue(this.states.On);
       });
 
-      
-
       this.log.info('Simple light modbus "' + this.config.name + '" accessory initialized.');
     }
 }

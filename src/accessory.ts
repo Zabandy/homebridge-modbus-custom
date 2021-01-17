@@ -60,9 +60,9 @@ export class ModbusAccessory {
     this.platform.api.updatePlatformAccessories([this.accessory]);
   }
 
-  public service<T extends WithUUID<typeof Service>>(type: T):Service {
-    const service = this.accessory.getService(type) || this.accessory.addService(type);
-    return service;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  public service<T extends WithUUID<typeof Service>>(type: T, ... constructorArgs: any[]):Service {
+    return this.accessory.getService(type) || (this.accessory.addService(type, ...constructorArgs));
   }
 
 }

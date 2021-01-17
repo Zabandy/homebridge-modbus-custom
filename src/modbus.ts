@@ -7,18 +7,22 @@ class SegmentInfo {
   public min = 9999;
   public max = 0;
   public offset = 9999;
-  public values = [];
+  public values: (number|boolean)[] = [];
 }
 
 type RegisterType = 'c' | 'd' | 'h' | 'i';
 
 class Command {
   constructor (
-  public command: 'r' | 'w',
-  public type: RegisterType,
-  public index: number,
-  public count: number,
-  public value: number) {}
+  public readonly command: 'r' | 'w',
+  public readonly type: RegisterType,
+  public readonly index: number,
+  public readonly count: number,
+  public readonly value: number) {
+    this.time = Date.now();
+  }
+
+  public readonly time: number;
 }
 
 export class Modbus extends EventEmitter {
@@ -82,7 +86,7 @@ export class Modbus extends EventEmitter {
     } else {
       final = value; 
     }
-    // set operation should have higher priority than read. That's why insert commands at the beginning of queue
+    // set operation should have higher priority than get. That's why insert commands at the beginning of queue
     this.commands.unshift(new Command('w', type as RegisterType, index, 0, final));
     this.fire();
 
@@ -108,6 +112,7 @@ export class Modbus extends EventEmitter {
     this.log.error('Socket closed. ' + error);
     if (this.updateInterval) {
       clearInterval(this.updateInterval);
+      this.updateInterval = undefined;
     }
 
     setTimeout(() => {
@@ -117,6 +122,10 @@ export class Modbus extends EventEmitter {
   }
 
   private update() {
+    if (this.commands.length > 0) {
+      return;
+    }
+    
     for(const type in this.segments) {
       const seg = this.segments[type];
       if (seg.max < seg.min) {
@@ -175,10 +184,20 @@ export class Modbus extends EventEmitter {
 
   private updateValues(response, command:Command) {
     const values: (number|boolean)[] = response.response.body.valuesAsArray;
+    const segment = this.segments[command.type];
+
     for(let i = 0; i < values.length; i++) {
-      // TODO: check if value has been changed
       const address = command.type + (command.index + i);
-      this.emit(address, address, values[i]);
+      // check if value has been changed
+      if (segment.offset < command.index + i && segment.offset + segment.values.length > command.index + i) {
+        if(segment.values[command.index + i - segment.offset] !== values[i]){
+          this.emit(address, address, values[i]);
+        }
+      } else {
+        this.emit(address, address, values[i]);
+      }
     }
+    segment.offset = command.index;
+    segment.values = values;
   }
 }

@@ -1,5 +1,4 @@
 {
-  "private": true,
   "displayName": "Homebridge Modbus Custom",
   "name": "homebridge-modbus-custom",
   "version": "1.0.2-beta.0",
