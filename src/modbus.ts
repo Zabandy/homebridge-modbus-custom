@@ -54,7 +54,7 @@ export class Modbus extends EventEmitter {
   }
 
   public connect() {
-    this.socket.connect(this.ip);this.modbus.readInputRegisters;
+    this.socket.connect(this.ip);
   }
 
   public on(address: string, listener: (address: string, value: number | boolean) => void): this {
@@ -115,6 +115,10 @@ export class Modbus extends EventEmitter {
       this.updateInterval = undefined;
     }
 
+    if (this.executing) {
+      this.executing = undefined; // TODO: Remove this quick fix (break the execution of queue function)
+    }
+
     setTimeout(() => {
       this.log.info('Reconnecting to', this.ip.host);
       this.socket.connect(this.ip);
@@ -122,7 +126,10 @@ export class Modbus extends EventEmitter {
   }
 
   private update() {
-    if (this.commands.length > 0) {
+    if (this.commands.length > 100) {
+      this.log.warn('Command queue has too much (' + this.commands.length + ') items. Update skipped'); // ???
+      // reset command queue
+      this.commands = [];
       return;
     }
     
@@ -139,19 +146,23 @@ export class Modbus extends EventEmitter {
   
   private commands: Command[] = [];
   private executing: Promise<undefined> | undefined;
+  private cycle = 0;
   private fire() {
     if (this.executing) {
       return;
     }
 
+    this.cycle++;
     this.executing = this.queue().then(() => this.executing = undefined);
   } 
 
   private async queue() {
     // TODO: Make command queue overfill protection
+    const cyrcle = this.cycle; // indicator to avoid multiple queue simultaneous execution
 
-    while (this.commands.length > 0) {
+    while (this.commands.length > 0 && this.cycle === cyrcle) {
       const command = this.commands.shift();
+      
       switch(command?.command) {
         case 'r':
           this.log.debug('reading ' + command.type + '(' + command.index + ', ' + command.count + ')');

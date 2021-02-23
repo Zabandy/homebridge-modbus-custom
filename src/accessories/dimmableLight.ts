@@ -76,6 +76,6 @@ export class DimmableModbusLight extends ModbusAccessory {
         .updateValue(this.states.brightness);
     });
 
-    this.log.info('Dimmable light modbus "' + this.config.name + '" accessory initialized.');
+    this.log.debug('Dimmable light modbus "' + this.config.name + '" accessory initialized.');
   }
 }

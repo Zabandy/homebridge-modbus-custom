@@ -50,6 +50,6 @@ export class CurtainsAccessory extends ModbusAccessory {
           .updateValue(this.states.On);
       }); //*/
 
-      this.log.info('Curtains modbus "' + this.config.name + '" accessory initialized.');
+      this.log.debug('Curtains modbus "' + this.config.name + '" accessory initialized.');
     }
 }

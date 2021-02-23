@@ -42,7 +42,7 @@ export class ModbusCustomPlugin implements DynamicPlatformPlugin {
 
   loadScripts() {
     if (!this.config.scripts) {
-      this.log.info('No scripts defined in config.json');
+      this.log.warn('No scripts defined in config.json');
       return;
     }
 
@@ -65,14 +65,14 @@ export class ModbusCustomPlugin implements DynamicPlatformPlugin {
 
   discoverDevices() {
     if (!this.config.accessories) {
-      this.log.info('No accessories defined in config.json');
+      this.log.warn('No accessories defined in config.json');
       return;
     }
     
     const newAccessories:PlatformAccessory[] = [];
 
     // Discover devices
-    this.log.info('Loading accessories from config.json');
+    this.log.debug('Loading accessories from config.json');
     this.config.accessories.forEach(element => {
       if (!this.scriptMap.has(element.script)) {
         this.log.warn('Unknown script "' + element.script + '" specified for device "' + element.name + '". Skipped.');
@@ -84,11 +84,11 @@ export class ModbusCustomPlugin implements DynamicPlatformPlugin {
       // Restore from cache or register new one
       let platformAccessory: PlatformAccessory | undefined = this.cache.find(accessory => accessory.UUID === uuid);
       if (platformAccessory) {
-        this.log.info('Restoring existing accessory from cache:', element.name);
+        this.log.debug('Restoring existing accessory from cache:', element.name);
       } 
 
       if (!platformAccessory) {
-        this.log.info('Creating new accessory:', element.name);
+        this.log.debug('Creating new accessory:', element.name);
         platformAccessory = new this.api.platformAccessory(element.name, uuid);
         newAccessories.push(platformAccessory);
       }
@@ -107,20 +107,25 @@ export class ModbusCustomPlugin implements DynamicPlatformPlugin {
 
       this.handlers.push(accessory);
       
-      this.log.info('Accessory "' + element.name + '" loaded');
+      this.log.debug('Accessory "' + element.name + '" loaded');
     });
 
     this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, newAccessories);
     // initialize handlers
     this.handlers.forEach(handler => handler.init());
 
-    this.log.info('Checking for unused accessories.');
+    let count = 0;
+    this.log.debug('Checking for unused accessories.');
     this.cache.forEach(element => {
       // unregister devices from left in cache
       if (!this.accessories.has(element.UUID)) {
-        this.log.info('Removing unused accessory:' + element.displayName);
+        this.log.debug('Removing unused accessory:' + element.displayName);
         this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [element]);
+        count++;
       }
     });
+    if (count > 0) {
+      this.log.info('Removed ' + count + ' unused devices');
+    }
   }
 }
