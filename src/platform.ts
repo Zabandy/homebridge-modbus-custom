@@ -36,7 +36,7 @@ export class ModbusCustomPlugin implements DynamicPlatformPlugin {
   }
   
   configureAccessory(accessory: PlatformAccessory) {
-    this.log.info('Loading accessory from cache:', accessory.displayName);
+    this.log.debug('Loading accessory from cache:', accessory.displayName);
     this.cache.push(accessory);
   }
 
@@ -56,7 +56,7 @@ export class ModbusCustomPlugin implements DynamicPlatformPlugin {
           continue;
         }
 
-        this.log.info('Script "' + key + '" loaded');
+        this.log.debug('Script "' + key + '" loaded');
       }
 
       this.discoverDevices();

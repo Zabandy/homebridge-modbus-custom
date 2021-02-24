@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { ModbusTCPClient } from 'jsmodbus';
 import { Socket, TcpSocketConnectOpts } from 'net';
 import { Logger } from 'homebridge';
+import { debug } from 'console';
 
 class SegmentInfo {
   public min = 9999;
@@ -157,7 +158,7 @@ export class Modbus extends EventEmitter {
   } 
 
   private async queue() {
-    // TODO: Make command queue overfill protection
+    // TODO: Make command queue overfill protection smarter
     const cyrcle = this.cycle; // indicator to avoid multiple queue simultaneous execution
 
     while (this.commands.length > 0 && this.cycle === cyrcle) {
@@ -165,7 +166,6 @@ export class Modbus extends EventEmitter {
       
       switch(command?.command) {
         case 'r':
-          this.log.debug('reading ' + command.type + '(' + command.index + ', ' + command.count + ')');
 
           switch(command.type){
             case 'c': await this.modbus.readCoils(command.index, command.count)
@@ -200,7 +200,7 @@ export class Modbus extends EventEmitter {
     for(let i = 0; i < values.length; i++) {
       const address = command.type + (command.index + i);
       // check if value has been changed
-      if (segment.offset < command.index + i && segment.offset + segment.values.length > command.index + i) {
+      if (segment.offset <= command.index + i && segment.offset + segment.values.length >= command.index + i) {
         if(segment.values[command.index + i - segment.offset] !== values[i]){
           this.emit(address, address, values[i]);
         }
