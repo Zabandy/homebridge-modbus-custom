@@ -3,7 +3,7 @@ import { ModbusTCPClient } from 'jsmodbus';
 import { Socket, TcpSocketConnectOpts } from 'net';
 import { Logger } from 'homebridge';
 
-type ReadFunc = (start: number, count: number) => Promise<any>;
+type ReadFunc = (start: number, count: number) => Promise<unknown>;
 class SegmentInfo {
   public min = 9999;
   public max = 0;
