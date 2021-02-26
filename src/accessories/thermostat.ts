@@ -33,8 +33,6 @@ export class ThermostatModbus extends ModbusAccessory {
         'Custom-Modbus-Radiator', 
         'Modbus-Accessory-Serial');
 
-      const validValues = [0, 3];
-
       const config: ThermostatConfig = this.config as ThermostatConfig;
       this.registers.temp = this.address(config.temp, '"temp" property in "' + this.config.name + '" accessory');
       this.registers.target = this.address(config.target, '"target" property in "' + this.config.name + '" accessory');
@@ -43,27 +41,27 @@ export class ThermostatModbus extends ModbusAccessory {
       this.device.setCharacteristic(this.platform.Characteristic.Name, this.config.name);
 
       //#region Current Heating Cooling State
-      this.states.CurrentHeatingCoolingState = this.platform.Characteristic.CurrentHeatingCoolingState.OFF;
+      this.states.CurrentHeatingCoolingState = this.platform.Characteristic.CurrentHeatingCoolingState.HEAT;
       let characteristic: Characteristic;
       
       characteristic = this.device.getCharacteristic(this.platform.Characteristic.CurrentHeatingCoolingState);
       characteristic.on('get', (callback: CharacteristicGetCallback) => {
         callback(null, this.states.CurrentHeatingCoolingState);
       });
-      characteristic.props.validValues = validValues;
+      characteristic.props.validValues = [0, 1];
       characteristic.updateValue(this.states.CurrentHeatingCoolingState);
       //#endregion
 
       //#region Target Heating Cooling State
-      this.states.TargetHeatingCoolingState = this.platform.Characteristic.CurrentHeatingCoolingState.HEAT;
+      this.states.TargetHeatingCoolingState = this.platform.Characteristic.TargetHeatingCoolingState.AUTO;
       characteristic = this.device.getCharacteristic(this.platform.Characteristic.TargetHeatingCoolingState);
       characteristic.on('get', (callback: CharacteristicGetCallback) => {
         callback(null, this.states.TargetHeatingCoolingState); 
       });
       characteristic.on('set', (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
-        callback(null);
+        callback(undefined, this.states.TargetHeatingCoolingState);
       });
-      characteristic.props.validValues = validValues;
+      characteristic.props.validValues = [1, 3];
       characteristic.updateValue(this.states.TargetHeatingCoolingState);
       //#endregion
 

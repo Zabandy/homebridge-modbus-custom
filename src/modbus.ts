@@ -198,13 +198,18 @@ export class Modbus extends EventEmitter {
 
     for(let i = 0; i < values.length; i++) {
       const address = command.type + (command.index + i);
-      // check if value has been changed
-      if (segment.offset <= command.index + i && segment.offset + segment.values.length >= command.index + i) {
-        if(segment.values[command.index + i - segment.offset] !== values[i]){
+      try {
+        // check if value has been changed
+        if (segment.offset <= command.index + i && segment.offset + segment.values.length >= command.index + i) {
+          if(segment.values[command.index + i - segment.offset] !== values[i]){
+            this.emit(address, address, values[i]);
+          }
+        } else {
           this.emit(address, address, values[i]);
         }
-      } else {
-        this.emit(address, address, values[i]);
+      } catch (e) {
+        this.log.error('Unhandled exception while handling ' + address + ' register change'); 
+        this.log.error(e); 
       }
     }
     segment.offset = command.index;
