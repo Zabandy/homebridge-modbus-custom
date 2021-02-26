@@ -75,6 +75,7 @@ export class ThermostatModbus extends ModbusAccessory {
       // track current temperature
       this.modbus.on(this.registers.temp, (address, value) => {
         this.states.CurrentTemperature = value as number;
+        this.log.debug('Got ' + value + ' on ' + config.name);
         this.device?.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
           .updateValue(this.states.CurrentTemperature);
       });

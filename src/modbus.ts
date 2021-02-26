@@ -2,7 +2,9 @@ import { EventEmitter } from 'events';
 import { ModbusTCPClient } from 'jsmodbus';
 import { Socket, TcpSocketConnectOpts } from 'net';
 import { Logger } from 'homebridge';
+import { debug } from 'console';
 
+type ReadFunc = (start: number, count: number) => Promise<any>;
 class SegmentInfo {
   public min = 9999;
   public max = 0;
@@ -30,6 +32,7 @@ export class Modbus extends EventEmitter {
   private updateInterval: NodeJS.Timeout | undefined;
   private socket: Socket;
   private modbus: ModbusTCPClient;
+  private valuesCache: Record<string, undefined| number| boolean> = {};
 
   private segments: Record<RegisterType, SegmentInfo> = {
     'c': new SegmentInfo,
@@ -68,7 +71,9 @@ export class Modbus extends EventEmitter {
     const seg = this.segments[type];
     seg.min = Math.min(seg.min, index);
     seg.max = Math.max(seg.max, index);
-
+    
+    this.valuesCache[address] = undefined;
+    this.log.debug('some item signed for ' + address);
     super.on(address, listener);
     return this;
   }
@@ -160,30 +165,35 @@ export class Modbus extends EventEmitter {
     // TODO: Make command queue overfill protection smarter
     const cyrcle = this.cycle; // indicator to avoid multiple queue simultaneous execution
 
+    const read = {
+      'c': this.modbus.readCoils.bind(this.modbus),
+      'd': this.modbus.readDiscreteInputs.bind(this.modbus), 
+      'h': this.modbus.readHoldingRegisters.bind(this.modbus),
+      'i': this.modbus.readInputRegisters.bind(this.modbus),
+    };
+    let readf: ReadFunc;
+    let sent: number;
+
     while (this.commands.length > 0 && this.cycle === cyrcle) {
       const command = this.commands.shift();
       
       switch(command?.command) {
         case 'r':
-
-          switch(command.type){
-            case 'c': await this.modbus.readCoils(command.index, command.count)
-              .then((response) => this.updateValues(response, command)); 
-              break;
-            case 'd': await this.modbus.readDiscreteInputs(command.index, command.count)
-              .then((response) => this.updateValues(response, command)); 
-              break;
-            case 'h': await this.modbus.readHoldingRegisters(command.index, command.count)
-              .then((response) => this.updateValues(response, command)); 
-              break;
-            case 'i': await this.modbus.readInputRegisters(command.index, command.count)
-              .then((response) => this.updateValues(response, command)); 
-              break;
+          readf = read[command.type];
+          sent = 0;
+          
+          // TODO: make groping smarter
+          // split request into small pieces because modbus has restrictions
+          while (sent < command.count) {
+            const next = Math.min(command.count - sent, 64);
+            const index = command.index + sent;
+            await readf(index, next)
+              .then((response) => this.updateValues(response, index, next, command));
+            sent += next;
           }
-
           break;
         case 'w':
-          this.log.debug('writing ' + command.value + ' to ' + command.type + command.index);
+          this.log.debug('Writing ' + command.value + ' to ' + command.type + command.index);
           await command.type !== 'h' ? 
             this.modbus.writeSingleCoil(command.index, command.value > 0 ? 1 : 0) :
             this.modbus.writeSingleRegister(command.index, command.value);
@@ -192,24 +202,22 @@ export class Modbus extends EventEmitter {
     }
   }
 
-  private updateValues(response, command:Command) {
+  private updateValues(response, index: number, count: number, command:Command) {
     const values: (number|boolean)[] = response.response.body.valuesAsArray;
+    if (values.length !== count) {
+      this.log.warn('Something went wrong with modbus responce: received count not equal to requested');
+    }
+
     const segment = this.segments[command.type];
 
     for(let i = 0; i < values.length; i++) {
-      const address = command.type + (command.index + i);
-      try {
-        // check if value has been changed
-        if (segment.offset <= command.index + i && segment.offset + segment.values.length >= command.index + i) {
-          if(segment.values[command.index + i - segment.offset] !== values[i]){
-            this.emit(address, address, values[i]);
-          }
-        } else {
-          this.emit(address, address, values[i]);
-        }
-      } catch (e) {
-        this.log.error('Unhandled exception while handling ' + address + ' register change'); 
-        this.log.error(e); 
+      const address = command.type + (index + i);
+      if (address in this.valuesCache && this.valuesCache[address] !== values[i]) {
+        this.log.debug('Value '+ address +
+          ' changed from ' + this.valuesCache[address] + 
+          ' to ' + values[i]);
+        this.emit(address, address, values[i]);
+        this.valuesCache[address] = values[i];
       }
     }
     segment.offset = command.index;

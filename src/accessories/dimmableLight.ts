@@ -40,7 +40,7 @@ export class DimmableModbusLight extends ModbusAccessory {
         brightness: this.states.brightness,
       };
     }
-
+    //#region On characteristic
     this.lightbulb.getCharacteristic(this.platform.Characteristic.On)
       .on('set', (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
         this.states.on = value as boolean;
@@ -52,6 +52,8 @@ export class DimmableModbusLight extends ModbusAccessory {
         callback(null, isOn);
       })
       .updateValue(this.states.on);
+
+    //#endregion
     
     this.lightbulb.getCharacteristic(this.platform.Characteristic.Brightness)
       .on('set', (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
@@ -68,6 +70,7 @@ export class DimmableModbusLight extends ModbusAccessory {
       .updateValue(this.states.brightness);
     
     this.modbus.on(this.addressOn, (address, value) => {
+      // this.log.info('Lamp ' + config.name + ' state changed to ' + value);
       this.states.on = value > 0;
       this.states.brightness = value as number;
       this.lightbulb?.getCharacteristic(this.platform.Characteristic.On)
