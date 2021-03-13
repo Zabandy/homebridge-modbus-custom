@@ -39,10 +39,14 @@ export class ModbusAccessory {
   }
 
   public address(address: string, location: string): string {
+    if (!address || address.length < 2) {
+      return '';
+    }
     const type = address[0];
     const index = parseInt(address.substr(1));
     if (isNaN(index) || !['c', 'd', 'h', 'i'].includes(type)) {
-      this.log.warn('Invalid address (' + address + ') specified for ' + location);
+      this.log.warn('Invalid address (' + address + ') specified for ' + location + ' accessory '
+        + this.config.name);
       return '';
     }
 

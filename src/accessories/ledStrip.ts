@@ -1,5 +1,5 @@
 import { ModbusAccessory, AcessoryFactory, ModbusAccessoryContext } from '../accessory';
-import { Service, CharacteristicValue, CharacteristicSetCallback, CharacteristicGetCallback, Characteristic } from 'homebridge';
+import { Service, CharacteristicValue, CharacteristicSetCallback, CharacteristicGetCallback, Categories } from 'homebridge';
 import { ModbusAccessoryConfig } from '../config';
 
 export const factory: AcessoryFactory = (context:ModbusAccessoryContext) => {
@@ -13,9 +13,9 @@ interface LedStripConfig extends ModbusAccessoryConfig {
 }
 
 export class LedStripModbusLight extends ModbusAccessory {
-  private lightbulb: Service | undefined;
+  private device: Service | undefined;
 
-  private device = {
+  private registers = {
     on: '',
     brightness: '',
     transition: '',
@@ -28,32 +28,54 @@ export class LedStripModbusLight extends ModbusAccessory {
   };
 
   private modes: Service[] = [];
+  private modeServices: Record<number, Service> = {};
 
   public init():void {
     this.setAcessoryInformation('Custom-Modbus-Manufacturer', 
       'Custom-Modbus-Device', 
       'Modbus-Accessory-Serial');
 
+    this.accessory.category = Categories.LIGHTBULB;
+
     const config = this.config as LedStripConfig;
-    this.device.on = this.address(config.on, 'on');
-    this.device.brightness = this.address(config.on, 'brightness');
+    this.registers.on = this.address(config.on, 'on');
+    this.registers.transition = this.address(config.transition, 'transition');
+    this.registers.brightness = this.address(config.on, 'brightness');
+
+    this.device = this.service(this.platform.Service.Television);
+    const dev = this.device;
+
+    dev.setCharacteristic(this.platform.Characteristic.Name, this.config.name);
+    dev.setCharacteristic(this.platform.Characteristic.ConfiguredName, config.name);
+    dev.setCharacteristic(this.platform.Characteristic.SleepDiscoveryMode, 
+      this.platform.Characteristic.SleepDiscoveryMode.ALWAYS_DISCOVERABLE);
+    dev.setCharacteristic(this.platform.Characteristic.Category, Categories.LIGHTBULB);
     
-    this.lightbulb = this.service(this.platform.Service.Lightbulb);
-    this.lightbulb.setCharacteristic(this.platform.Characteristic.Name, this.config.name);
-    
-    this.lightbulb.getCharacteristic(this.platform.Characteristic.On)
+    // dev.setPrimaryService(true);
+    //#region Active characteristic
+    dev.getCharacteristic(this.platform.Characteristic.Active)
       .on('set', (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
         this.states.on = value as boolean;
 
         // set device state over modbus
-        this.modbus.set(this.device.on, this.states.on ? 101 : 0);
+        this.modbus.set(this.registers.on, this.states.on ? 101 : 0);
         callback(null);
       })
       .on('get', (callback: CharacteristicGetCallback) => {
         callback(null, this.states.on);
       })
       .updateValue(this.states.on);
+      
+    this.modbus.on(this.registers.on, (address, value) => {
+      this.states.transition = value as number;
+      this.states.on = this.states.transition > 0;
+      this.device?.updateCharacteristic(this.platform.Characteristic.Active, this.states.on);
+      this.device?.updateCharacteristic(this.platform.Characteristic.ActiveIdentifier, this.states.transition);
+    });
+    //#endregion
 
+    //#region Brightness characteristic
+    /*
     this.lightbulb.getCharacteristic(this.platform.Characteristic.Brightness)
       .on('set', (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
         this.states.brightness = value as number;
@@ -66,63 +88,55 @@ export class LedStripModbusLight extends ModbusAccessory {
         callback(null, this.states.brightness);
       })
       .updateValue(this.states.brightness);
-
-    this.modbus.on(this.device.on, (address, value) => {
-      this.states.on = value as boolean;
-      this.lightbulb?.getCharacteristic(this.platform.Characteristic.On)
-        .updateValue(this.states.on);
-    });
-
+    //*/
+    /*
     this.modbus.on(this.device.brightness, (address, value) => {
       this.states.brightness = value as number;
       this.lightbulb?.getCharacteristic(this.platform.Characteristic.Brightness)
         .updateValue(this.states.brightness);
     });
-      
-    /*
-    this.addMode('Белый свет', 1);
-    this.addMode('Синий свет', 92);
-    this.addMode('Безумие случайных цветов', 14);
-    this.addMode('Случайные вспышки', 25);
-    this.addMode('Цветовой пропеллер', 27);
-    this.addMode('Вращающаяся радуга', 30);
-    this.addMode('Вспышки белого', 40);
-    this.addMode('Неизвестно 1', 77);
-    this.addMode('Неизвестно 2', 44);
-    this.addMode('Неизвестно 3', 88);
+    
     //*/
-  }
-
-  private addMode(name: string, transitionValue: number):Service {
-    const id = 'switch-mode-' + transitionValue;
-    const service = this.accessory.getService(name) ||
-      this.accessory.addService(this.platform.Service.Lightbulb, name, id);
-    service.getCharacteristic(this.platform.Characteristic.On)
+    //#endregion
+    
+    //#region Transition Mode service
+    //*
+    
+    dev.getCharacteristic(this.platform.Characteristic.ActiveIdentifier)
       .on('set', (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
-        this.states.transition = transitionValue;
+        this.log.debug('led transition  ' + value);
+        this.states.transition = value as number;
 
-        if (!transitionValue || !this.states.on) {
-          callback(null);
-          return;
-        }
-        
-        this.modbus.set(this.device.transition, this.states.on ? transitionValue : 0);
-        // TODO: set device state over modbus
-
-        // turn off all other modes
-        for (let i = 0; i < this.modes.length; i++) {
-          if (this.modes[i].name !== name) {
-            this.modes[i].getCharacteristic(this.platform.Characteristic.On).updateValue(false);
-          }
-        }
-        
+        this.log.debug('led transition programm is set to ' + this.states.transition);
+        // set device state over modbus
+        this.modbus.set(this.registers.transition, this.states.on ? this.states.transition : 0);
         callback(null);
-      })
-      .on('get', (callback: CharacteristicGetCallback) => {
-        callback(null, this.states.on ? this.states.transition === transitionValue : false);
       });
+    dev.updateCharacteristic(this.platform.Characteristic.ActiveIdentifier, 1);
 
-    this.modes.push(service);
-    return service;
+    const modes = [ 
+      {id: 1, name: 'Белый свет'},
+      {id: 92, name: 'Синий свет'},
+      {id: 14, name: 'Случайное безумие'},
+      {id: 25, name: 'Вспышки'},
+      {id: 27, name: 'Пропеллер'},
+      {id: 30, name: 'Радуга'},
+      {id: 40, name: 'Вспышки белого'}, 
+    ];
+
+    for (let i = 0; i < modes.length; i++) {
+      const inser = this.accessory.addService(this.platform.Service.InputSource, modes[i].name, 'transitionMode'+i);
+
+      inser.setCharacteristic(this.platform.Characteristic.Identifier, modes[i].id)
+        .setCharacteristic(this.platform.Characteristic.ConfiguredName, modes[i].name)
+        .setCharacteristic(this.platform.Characteristic.IsConfigured, this.platform.Characteristic.IsConfigured.CONFIGURED)
+        .setCharacteristic(this.platform.Characteristic.InputSourceType, this.platform.Characteristic.InputSourceType.APPLICATION)
+        .setCharacteristic(this.platform.Characteristic.CurrentVisibilityState, this.platform.Characteristic.CurrentVisibilityState.SHOWN)
+        .setCharacteristic(this.platform.Characteristic.TargetVisibilityState, this.platform.Characteristic.TargetVisibilityState.SHOWN);  
+      dev.addLinkedService(inser);
+    }
+    //#endregion
+
+    this.accessory.category = Categories.LIGHTBULB;
   }
 }
