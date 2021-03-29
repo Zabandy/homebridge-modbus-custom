@@ -9,6 +9,8 @@ export const factory:AcessoryFactory = (context:ModbusAccessoryContext) => {
 interface ThermostatConfig extends ModbusAccessoryConfig {
     min: 10;
     max: 36;
+    auto: string;
+    on: string;
     temp: string;
     target: string;
 }
@@ -19,13 +21,15 @@ export class ThermostatModbus extends ModbusAccessory {
     private registers = {
       temp: '',
       target: '',
+      on: '',
+      auto: '',
     };
 
     private states = {
-      TargetTemperature: 23,
-      CurrentTemperature: 0,
-      TargetHeatingCoolingState: 0,
-      CurrentHeatingCoolingState: 0,
+      targetTemp: 23,
+      currentTemp: 0,
+      currentState: 0,
+      targetState: 0,
     };
 
     public init():void {
@@ -34,73 +38,92 @@ export class ThermostatModbus extends ModbusAccessory {
         'Modbus-Accessory-Serial');
 
       const config: ThermostatConfig = this.config as ThermostatConfig;
-      this.registers.temp = this.address(config.temp, '"temp" property in "' + this.config.name + '" accessory');
-      this.registers.target = this.address(config.target, '"target" property in "' + this.config.name + '" accessory');
+      this.registers.temp = this.address(config.temp, 'temp');
+      this.registers.target = this.address(config.target, 'target');
+      this.registers.on = this.address(config.on, 'on');
+      this.registers.auto = this.address(config.auto, 'auto');
       
       this.device = this.service(this.platform.Service.Thermostat);
       this.device.setCharacteristic(this.platform.Characteristic.Name, this.config.name);
 
+      const DeviceState = this.platform.Characteristic.TargetHeatingCoolingState;
       //#region Current Heating Cooling State
-      this.states.CurrentHeatingCoolingState = this.platform.Characteristic.CurrentHeatingCoolingState.HEAT;
       let characteristic: Characteristic;
       
       characteristic = this.device.getCharacteristic(this.platform.Characteristic.CurrentHeatingCoolingState);
       characteristic.on('get', (callback: CharacteristicGetCallback) => {
-        callback(null, this.states.CurrentHeatingCoolingState);
+        callback(null, this.states.currentState);
       });
-      characteristic.props.validValues = [0, 1];
-      characteristic.updateValue(this.states.CurrentHeatingCoolingState);
+      characteristic.props.validValues = [DeviceState.OFF, DeviceState.HEAT];
+      characteristic.updateValue(this.states.currentState);
+
+      // track current state
+      this.modbus.on(this.registers.on, (address, value) => {
+        this.states.currentState = (value as number) > 0 ? DeviceState.HEAT : DeviceState.OFF;
+        this.device?.getCharacteristic(this.platform.Characteristic.CurrentHeatingCoolingState)
+          .updateValue(this.states.currentState);
+      });
       //#endregion
 
       //#region Target Heating Cooling State
-      this.states.TargetHeatingCoolingState = this.platform.Characteristic.TargetHeatingCoolingState.AUTO;
       characteristic = this.device.getCharacteristic(this.platform.Characteristic.TargetHeatingCoolingState);
       characteristic.on('get', (callback: CharacteristicGetCallback) => {
-        callback(null, this.states.TargetHeatingCoolingState); 
+        callback(null, this.states.targetState); 
       });
       characteristic.on('set', (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
-        callback(undefined, this.states.TargetHeatingCoolingState);
+        this.states.targetState = value as number;
+        this.modbus.set(this.registers.auto, this.states.targetState > 0 ? 1 : 0);
+        callback(undefined, this.states.targetState);
       });
-      characteristic.props.validValues = [1, 3];
-      characteristic.updateValue(this.states.TargetHeatingCoolingState);
+      characteristic.props.validValues = [DeviceState.OFF, DeviceState.AUTO];
+      characteristic.updateValue(this.states.targetState);
+
+      // track target state
+      this.modbus.on(this.registers.auto, (address, value) => {
+        this.states.targetState = (value as number) > 0 ? DeviceState.AUTO : DeviceState.OFF;
+        this.device?.getCharacteristic(this.platform.Characteristic.TargetHeatingCoolingState)
+          .updateValue(this.states.targetState);
+      });
+
       //#endregion
 
       //#region Current Temperature
       characteristic = this.device.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
         .on('get', (callback: CharacteristicGetCallback) => {
-          callback(null, this.states.CurrentTemperature);
+          callback(null, this.states.currentTemp);
         })
-        .updateValue(this.states.CurrentTemperature);
-      
-      // track current temperature
-      this.modbus.on(this.registers.temp, (address, value) => {
-        this.states.CurrentTemperature = value as number;
-        this.log.debug('Got ' + value + ' on ' + config.name);
-        this.device?.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
-          .updateValue(this.states.CurrentTemperature);
-      });
+        .updateValue(this.states.currentTemp);
+        
       characteristic.props.minValue = config.min;
       characteristic.props.maxValue = config.max;
       characteristic.props.minStep = 1;
+      
+      // track current temperature
+      this.modbus.on(this.registers.temp, (address, value) => {
+        this.states.currentTemp = value as number;
+        this.log.debug('Got ' + value + ' on ' + config.name);
+        this.device?.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
+          .updateValue(this.states.currentTemp);
+      });      
       //#endregion
 
       //#region Target Temperature
       characteristic = this.device.getCharacteristic(this.platform.Characteristic.TargetTemperature)
         .on('get', (callback: CharacteristicGetCallback) => {
-          callback(null, this.states.TargetTemperature);
+          callback(null, this.states.targetTemp);
         })
         .on('set', (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
-          this.states.TargetTemperature = value as number;
-          this.modbus.set(this.registers.target, this.states.TargetTemperature);
+          this.states.targetTemp = value as number;
+          this.modbus.set(this.registers.target, this.states.targetTemp);
           callback(null);
         })
-        .updateValue(this.states.TargetTemperature);
+        .updateValue(this.states.targetTemp);
 
       // track target temperature
       this.modbus.on(this.registers.target, (address, value) => {
-        this.states.CurrentTemperature = value as number;
+        this.states.targetTemp = value as number;
         this.device?.getCharacteristic(this.platform.Characteristic.TargetTemperature)
-          .updateValue(this.states.TargetTemperature);
+          .updateValue(this.states.targetTemp);
       });
 
       characteristic.props.minValue = config.min;
@@ -113,4 +136,5 @@ export class ThermostatModbus extends ModbusAccessory {
 
       this.log.debug('Thermostat modbus "' + this.config.name + '" accessory initialized.');
     }
+
 }

@@ -125,7 +125,8 @@ export class LedStripModbusLight extends ModbusAccessory {
     ];
 
     for (let i = 0; i < modes.length; i++) {
-      const inser = this.accessory.addService(this.platform.Service.InputSource, modes[i].name, 'transitionMode'+i);
+      const inser = this.accessory.getService(modes[i].name) ||
+      this.accessory.addService(this.platform.Service.InputSource, modes[i].name, 'transitionMode'+i);
 
       inser.setCharacteristic(this.platform.Characteristic.Identifier, modes[i].id)
         .setCharacteristic(this.platform.Characteristic.ConfiguredName, modes[i].name)
